@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer utilities {
+  /* Faint literary grid pattern of tiny desert sand dots */
+  .bg-grid-dots {
+    background-image: radial-gradient(rgba(210, 180, 140, 0.25) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  
+  /* Delicate repeating pattern of small pink circles */
+  .bg-pink-circles {
+    background-image: radial-gradient(rgba(255, 145, 164, 0.22) 2px, transparent 2.5px);
+    background-size: 28px 28px;
+  }
+
+  /* Interactive Dusty Rose Dot Grid */
+  .bg-interactive-dots {
+    position: absolute;
+    inset: 0;
+    /* Base grid of tiny dusty rose circles (#C49A9A) at 12% opacity on a 16px grid */
+    background-image: radial-gradient(rgba(196, 154, 154, 0.12) 1.2px, transparent 1.2px);
+    background-size: 16px 16px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .bg-interactive-dots::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* Bloomed, larger and more saturated burgundy circles (#7A3E48) at 35% opacity with 2px radius */
+    background-image: radial-gradient(rgba(122, 62, 72, 0.35) 2px, transparent 2px);
+    background-size: 16px 16px;
+    /* Soft radial reveal around the pointer */
+    -webkit-mask-image: radial-gradient(circle 150px at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 15%, transparent 80%);
+    mask-image: radial-gradient(circle 150px at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 15%, transparent 80%);
+    pointer-events: none;
+  }
+}
+
+/* Custom scrollbar matching the high-contrast warm cream theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F7F3EC;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2B2B2B;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7A3E48;
+}
+
+/* Custom animations for tickers & floating background orbs */
+@keyframes ticker {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-ticker {
+  display: flex;
+  width: max-content;
+  animation: ticker 40s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+@keyframes float-gentle {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) scale(1.05);
+  }
+}
+
+.animate-float-1 {
+  animation: float-gentle 12s ease-in-out infinite;
+}
+
+.animate-float-2 {
+  animation: float-gentle 16s ease-in-out infinite 2s;
+}
+
+.animate-float-3 {
+  animation: float-gentle 14s ease-in-out infinite 4s;
+}
