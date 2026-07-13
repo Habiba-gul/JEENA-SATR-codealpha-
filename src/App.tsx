@@ -45,10 +45,24 @@ import {
 } from './data';
 import BookCover from './components/BookCover';
 import AdminBlueprint from './components/AdminBlueprint';
+import { 
+  isSupabaseConfigured, 
+  fetchBooksFromSupabase, 
+  insertReviewToSupabase, 
+  fetchOrdersFromSupabase, 
+  createOrderInSupabase, 
+  updateOrderStatusInSupabase, 
+  fetchChatThreadsFromSupabase, 
+  upsertChatThreadInSupabase, 
+  insertChatMessageToSupabase 
+} from './lib/supabase.ts';
 
 export default function App() {
   // --- APPLICATION STATE ---
   const [currentView, setCurrentView] = useState<'splash' | 'auth' | 'main' | 'messages_hub' | 'categories_page' | 'product_detail' | 'cart' | 'account'>('splash');
+  
+  // Database status indicator state
+  const [dbStatus, setDbStatus] = useState<'offline' | 'connecting' | 'connected' | 'error'>('offline');
   
   // Mouse position state for interactive background bloom
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
@@ -160,6 +174,53 @@ export default function App() {
     localStorage.setItem('jeena_satr_books', JSON.stringify(books));
   }, [books]);
 
+  // --- SUPABASE SYNCHRONIZATION ---
+  useEffect(() => {
+    const syncWithSupabase = async () => {
+      const configured = isSupabaseConfigured();
+      if (!configured) {
+        setDbStatus('offline');
+        return;
+      }
+
+      setDbStatus('connecting');
+      try {
+        // Load Books from Supabase if connected
+        const fetchedBooks = await fetchBooksFromSupabase();
+        if (fetchedBooks && fetchedBooks.length > 0) {
+          setBooks(fetchedBooks);
+        }
+
+        // If user is logged in, sync their orders and chats from Supabase
+        if (user.isLoggedIn && user.email) {
+          const fetchedOrders = await fetchOrdersFromSupabase(user.email);
+          if (fetchedOrders) {
+            setOrders(fetchedOrders);
+          }
+
+          const fetchedThreads = await fetchChatThreadsFromSupabase(user.email);
+          if (fetchedThreads && fetchedThreads.length > 0) {
+            setChatThreads(fetchedThreads);
+          } else {
+            // Seed initial threads to Supabase if none exist
+            for (const thread of INITIAL_CHAT_THREADS) {
+              await upsertChatThreadInSupabase(thread, user.email);
+              for (const msg of thread.messages) {
+                await insertChatMessageToSupabase(thread.id, msg, thread.lastMessage);
+              }
+            }
+          }
+        }
+        setDbStatus('connected');
+      } catch (err) {
+        console.error("Failed to sync with Supabase:", err);
+        setDbStatus('error');
+      }
+    };
+
+    syncWithSupabase();
+  }, [user.isLoggedIn, user.email]);
+
   // --- AUTO-SCROLL TO BOTTOM OF CHAT ---
   useEffect(() => {
     if (chatBottomRef.current) {
@@ -251,7 +312,7 @@ export default function App() {
   const cartTotal = cartSubtotal + shippingCharge;
 
   // --- CHECKOUT PROCESS ---
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (selectedCartItems.length === 0) {
       alert("Please select at least one book to purchase.");
       return;
@@ -277,6 +338,19 @@ export default function App() {
       shipping: shippingCharge,
       total: cartTotal
     };
+
+    // If Supabase is configured, sync order online
+    if (isSupabaseConfigured()) {
+      await createOrderInSupabase(newOrder, user.email);
+      
+      const sysMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        sender: 'system',
+        text: `Success! Order ${newOrder.id} has been registered in the system. Check the tracking timeline under your Orders section.`,
+        timestamp: 'Just now'
+      };
+      await insertChatMessageToSupabase('t2', sysMsg, `Success! Order ${newOrder.id} has been registered in the system.`);
+    }
 
     setOrders((prev: Order[]) => [newOrder, ...prev]);
     // Clear purchased items from active cart
@@ -309,7 +383,7 @@ export default function App() {
   };
 
   // --- SUBMIT BOOK REVIEW ---
-  const handleAddReview = (e: React.FormEvent, bookId: string) => {
+  const handleAddReview = async (e: React.FormEvent, bookId: string) => {
     e.preventDefault();
     if (!reviewText.trim()) return;
 
@@ -320,6 +394,11 @@ export default function App() {
       text: reviewText,
       date: new Date().toISOString().split('T')[0]
     };
+
+    // If Supabase is configured, sync review online
+    if (isSupabaseConfigured()) {
+      await insertReviewToSupabase(bookId, newReview);
+    }
 
     setBooks((prev: Book[]) => prev.map((book: Book) => {
       if (book.id === bookId) {
@@ -353,7 +432,7 @@ export default function App() {
   };
 
   // --- SEND CHAT MESSAGE ---
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!typedMessage.trim() || !activeThreadId) return;
 
@@ -363,6 +442,10 @@ export default function App() {
       text: typedMessage,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
+
+    if (isSupabaseConfigured()) {
+      await insertChatMessageToSupabase(activeThreadId, newMsg, typedMessage);
+    }
 
     setChatThreads((prev: ChatThread[]) => prev.map((t: ChatThread) => {
       if (t.id === activeThreadId) {
@@ -380,7 +463,7 @@ export default function App() {
     setTypedMessage('');
 
     // Simulated automated peer reply to sustain the bookstore experience
-    setTimeout(() => {
+    setTimeout(async () => {
       let responseText = "That sounds fascinating! Let me verify our catalog archives for you.";
       if (userQuery.toLowerCase().includes('peer') || userQuery.toLowerCase().includes('kamil')) {
         responseText = "Peer-e-Kamil is actually our best seller this week. It highlights Sufism and spiritual journeys beautifully. Would you like me to reserve a hardback?";
@@ -397,6 +480,10 @@ export default function App() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
+      if (isSupabaseConfigured()) {
+        await insertChatMessageToSupabase(activeThreadId, autoReply, responseText);
+      }
+
       setChatThreads((prev: ChatThread[]) => prev.map((t: ChatThread) => {
         if (t.id === activeThreadId) {
           return {
@@ -411,10 +498,11 @@ export default function App() {
   };
 
   // --- ADMIN FUNCTION: TOGGLE ORDER STATE FOR TESTING ---
-  const handleAdminToggleOrderStatus = (orderId: string) => {
+  const handleAdminToggleOrderStatus = async (orderId: string) => {
+    let nextStatus: 'ordered' | 'shipping' | 'delivered' = 'ordered';
+
     setOrders((prev: Order[]) => prev.map((ord: Order) => {
       if (ord.id === orderId) {
-        let nextStatus: 'ordered' | 'shipping' | 'delivered' = 'ordered';
         if (ord.status === 'ordered') nextStatus = 'shipping';
         else if (ord.status === 'shipping') nextStatus = 'delivered';
         else nextStatus = 'ordered';
@@ -423,6 +511,10 @@ export default function App() {
       }
       return ord;
     }));
+
+    if (isSupabaseConfigured()) {
+      await updateOrderStatusInSupabase(orderId, nextStatus);
+    }
   };
 
   // --- BOOK SEARCH FILTERING ---
@@ -476,8 +568,20 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Role badge */}
-              <span className="font-mono text-[9px] px-2 py-0.5 border border-[#E7DDD7] text-[#7A3E48] rounded-full uppercase bg-white/60 font-semibold shadow-sm">
+              {/* Role badge with Database connection state */}
+              <span className="font-mono text-[9px] px-2 py-0.5 border border-[#E7DDD7] text-[#7A3E48] rounded-full uppercase bg-white/60 font-semibold shadow-sm flex items-center gap-1.5">
+                <div 
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    dbStatus === 'connected' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 
+                    dbStatus === 'connecting' ? 'bg-amber-400 animate-pulse' : 
+                    dbStatus === 'error' ? 'bg-red-500' : 'bg-stone-400'
+                  }`}
+                  title={
+                    dbStatus === 'connected' ? 'Supabase Online DB Connected' : 
+                    dbStatus === 'connecting' ? 'Connecting to Supabase...' : 
+                    dbStatus === 'error' ? 'Supabase Connection Error' : 'Offline / LocalStorage Fallback Mode'
+                  }
+                />
                 {user.role === 'admin' ? 'Curator (Admin)' : 'Reader'}
               </span>
 
